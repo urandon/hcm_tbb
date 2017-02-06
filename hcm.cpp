@@ -66,6 +66,7 @@ int solve_hcm(mtype& m_matrix, const pointstype& data, int n_clusters, int max_i
 	if (n_points == 0 || n_dim == 0) {
 		return SOLVE_HCM_STATUS::eDataWrong;
 	}
+    m_matrix.resize(n_clusters, std::vector<bool>(n_points, false));
 
     // STEP 1: init centers
     pointstype centers(n_clusters, vtype(n_dim));
@@ -76,12 +77,13 @@ int solve_hcm(mtype& m_matrix, const pointstype& data, int n_clusters, int max_i
 
         tbb::parallel_for(0, n_clusters, [&](int cidx) {
             int pidx = pts_distr(gen);
-            std::memcpy(centers[cidx].data(), data[pidx].data(), n_dim * sizeof(double));
+            std::copy(data[pidx].begin(), data[pidx].end(), centers[cidx].begin());
         });
     }
 
     // main optimization cycle
     std::vector<int> cluster_mapping(n_points);
+    std::vector<int> old_cluster_mapping(n_points);
     bool converged = false;
     double J_old = 0;
     for (int iter = 0; iter < max_iters && !converged; ++iter) {
@@ -120,42 +122,47 @@ int solve_hcm(mtype& m_matrix, const pointstype& data, int n_clusters, int max_i
             J_tls.local() += argmin.first;
         });
 
-        // STEP 3: evaluate quality functional
+        // update M
+        tbb::parallel_for(0, n_points, [&](int pidx) {
+            m_matrix[old_cluster_mapping[pidx]][pidx] = false;
+            m_matrix[cluster_mapping[pidx]][pidx] = true;
+        });
+
+
+        // STEP 3: evaluate quality functional (join thread locals)
         double J = J_tls.combine(std::plus<double>());
 
         // STEP 4: update cluster centers
         std::vector<int> cluster_counters(n_clusters, 0);
         tbb::parallel_for(0, n_clusters, [&](int cidx){
-            std::memset(centers[cidx].data(), 0, n_dim * sizeof(double));
-        });
-
-        for (int pidx = 0; pidx < n_points; ++pidx) {
-            vtype& center = centers[cluster_mapping[pidx]];
-            const vtype& point = data[pidx];
-            cluster_counters[cluster_mapping[pidx]] += 1;
-            tbb::parallel_for(0, n_dim, [&](int didx) {
-                center[didx] += point[didx];
-            });
-        }
-
-        tbb::parallel_for(0, n_clusters, [&](int cidx){
+            int n_points_in_cluster = 0;
+            const std::vector<bool>& m_matrix_cidx = m_matrix[cidx];
             vtype& center = centers[cidx];
-            for(int didx = 0; didx < n_dim; ++didx) {
-                center[didx] /= cluster_counters[cidx];
-            }
+            std::fill(center.begin(), center.end(), 0);
+
+            tbb::parallel_for(0, n_points, [&](int pidx) {
+                if (m_matrix_cidx[pidx]) {
+                    const vtype& point = data[pidx];
+                    n_points_in_cluster += 1;
+                    tbb::parallel_for(0, n_dim, [&](int didx) {
+                        center[didx] += point[didx];
+                    });
+                }
+            });
+
+            tbb::parallel_for(0, n_dim, [&](int didx) {
+                center[didx] /= n_points_in_cluster;
+            });
         });
 
         // check for convergency
         if (abs(J_old - J) < eps)
             converged = true;
         J_old = J;
+
+        std::swap(cluster_mapping, old_cluster_mapping);
     }
 
-    // write results to M-matrix format
-    m_matrix.resize(n_points, std::vector<bool>(n_clusters, false));
-    tbb::parallel_for(0, n_points, [&](int pidx) {
-        m_matrix[pidx][cluster_mapping[pidx]] = true;
-    });
 
 	return (converged) ? SOLVE_HCM_STATUS::eOK : SOLVE_HCM_STATUS::eNotConverged;
 }
