@@ -188,8 +188,9 @@ int main(int argc, char ** argv)
     if (argc > 5) std::istringstream(argv[5]) >> max_iters;
     if (argc > 6) std::istringstream(argv[6]) >> eps;
 
+    tbb::task_scheduler_init task_scheduler;
     if (n_tbb_threads != -1) {
-        tbb::task_scheduler_init(n_tbb_threads);
+        task_scheduler.initialize(n_tbb_threads);
     }
 
 	get_data(data, std::ifstream(argv[2]));
