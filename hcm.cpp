@@ -37,11 +37,13 @@ void get_data(pointstype& data, std::istream& in = std::cin)
 void take_m_matrix(const mtype& m_matrix, std::ostream& out = std::cout)
 {
     for (const auto & point : m_matrix)
-	{
-		for (const auto & belong_to_cluster : point)
+    {
+        for (const auto & belong_to_cluster : point) {
             out << belong_to_cluster << " ";
-		out << std::endl;
-	}
+        }
+	out << std::"\n";
+    }
+    out << std::flush;
 }
 
 
@@ -179,11 +181,13 @@ int main(int argc, char ** argv)
     double eps = 1e-3;
     int n_tbb_threads = -1;
 
+    std::ios_base::sync_with_stdio(0);
+
     if (argc < 3-1 && argc > 5+1) {
         std::cout << "Usage: " << argv[0] << "nclusters infile ofile [nthreads] [max_iters] [eps]" << std::endl;
     }
 
-	std::istringstream(argv[1]) >> n_clusters;
+    std::istringstream(argv[1]) >> n_clusters;
     if (argc > 4) std::istringstream(argv[4]) >> n_tbb_threads;
     if (argc > 5) std::istringstream(argv[5]) >> max_iters;
     if (argc > 6) std::istringstream(argv[6]) >> eps;
@@ -193,7 +197,7 @@ int main(int argc, char ** argv)
         task_scheduler.initialize(n_tbb_threads);
     }
 
-	get_data(data, std::ifstream(argv[2]));
+    get_data(data, std::ifstream(argv[2]));
     int status = solve_hcm(m_matrix, data, n_clusters, max_iters, eps);
     std::cout << SOLVE_HCM_STATUS_MSG[status] << std::endl;
     take_m_matrix(m_matrix, std::ofstream(argv[3]));
